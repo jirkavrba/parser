@@ -1,4 +1,5 @@
 const { getJsonFromXMLFile } = require('../helpers/helper');
+const { getDate } = require('./base.helpers');
 
 const TestResult = require('../models/TestResult');
 const TestSuite = require('../models/TestSuite');
@@ -132,6 +133,8 @@ function getTestCases(rawSuite, parent_meta) {
       testCase.id = rawCase["@_id"] ?? "";
       testCase.name = rawCase["@_fullname"] ?? rawCase["@_name"];
       testCase.duration = (rawCase["@_time"] ?? rawCase["@_duration"]) * 1000; // in milliseconds
+      testCase.startTime = getDate(rawCase["@_start-time"]);
+      testCase.endTime = getDate(rawCase["@_end-time"]);
       testCase.status = RESULT_MAP[result];
 
       // v2 : non-executed should be tests should be Ignored
@@ -141,6 +144,9 @@ function getTestCases(rawSuite, parent_meta) {
       // v3 : failed tests with error label should be Error
       if (rawCase["@_label"] == "Error") {
         testCase.status = "ERROR";
+      }
+      if (rawCase["@_label"] == "Invalid") {
+        testCase.status = "SKIP"; // treat invalid tests as skipped
       }
       let errorDetails = rawCase.reason ?? rawCase.failure;
       if (errorDetails !== undefined) {
@@ -182,7 +188,12 @@ function getTestSuites(rawSuites, assembly_meta) {
       suite.id = rawSuite["@_id"] ?? '';
       suite.name = rawSuite["@_fullname"] ?? rawSuite["@_name"];
       suite.duration = (rawSuite["@_time"] ?? rawSuite["@_duration"]) * 1000; // in milliseconds
+      suite.startTime = getDate(rawSuite["@_start-time"]);
+      suite.endTime = getDate(rawSuite["@_end-time"]);
       suite.status = RESULT_MAP[rawSuite["@_result"]];
+      if (rawSuite["@_label"] == "Invalid") {
+        suite.status = "SKIP"; // treat invalid suites as skipped
+      }
 
       mergeMeta(assembly_meta, suite.metadata);
       populateMetaData(rawSuite, suite);
@@ -212,7 +223,7 @@ function getTestResult(json) {
 
   const result = new TestResult();
   const rawResult = json["test-results"] ?? json["test-run"];
-  const rawSuite = rawResult["test-suite"][0];
+  const rawSuite = (rawResult["test-suite"] !== undefined) ? rawResult["test-suite"][0] : { "@_time": 0, "@_result": "Passed"};
 
   result.name = rawResult["@_fullname"] ?? rawResult["@_name"];
   result.duration = (rawSuite["@_time"] ?? rawSuite["@_duration"]) * 1000; // in milliseconds
@@ -225,6 +236,22 @@ function getTestResult(json) {
   result.failed = result.suites.reduce((total, suite) => { return total + suite.failed }, 0);
   result.skipped = result.suites.reduce((total, suite) => { return total + suite.skipped }, 0);
   result.errors = result.suites.reduce((total, suite) => { return total + suite.errors }, 0);
+
+  // nunit v2 has date + time and duration from test cases  
+  if (nunitVersion == "v2") {
+    let date = rawResult["@_date"];
+    let time = rawResult["@_time"];
+    if (date && time) {
+      let startTime = getDate(`${date}T${time}Z`); // always assume UTC
+      result.startTime = startTime;
+      result.endTime = new Date(startTime.getTime() + result.duration);
+    }
+  }
+  // nunit v3 includes start and end times at the test run level
+  if (nunitVersion == "v3") {
+    result.startTime = getDate(rawResult["@_start-time"]);
+    result.endTime = getDate(rawResult["@_end-time"]);
+  }
 
   return result;
 }

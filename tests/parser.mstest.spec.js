@@ -23,8 +23,7 @@ describe('Parser - MSTest', () => {
 
   it('Should express durations in milliseconds', () => {
     //trx represents timestamps with microseconds 00:00:00.1234567
-    const testDataPath = "tests/data/mstest/testresults.trx";
-    const result = parse({ type: 'mstest', files: [testDataPath] });
+    const result = parse({ type: 'mstest', files: [`${testDataPath}/testresults.trx`] });
 
     const failingTest = result.suites[0].cases.find(test => test.name === 'MSTestSample.MockTestFixture.FailingTest');
     assert.equal(failingTest.duration, 25.9239);
@@ -41,6 +40,30 @@ describe('Parser - MSTest', () => {
     const mockTest3 = result.suites[0].cases.find(test => test.name === 'MSTestSample.MockTestFixture.MockTest3');
     assert.equal(mockTest3.duration, 0.0196);
   })
+
+  it('Should include started and completed timestamps on tests', () => {
+    const result = parse({ type: 'mstest', files: [`${testDataPath}/testresults_pass.trx`] });
+    assert.equal(result.total, 1);
+    result.suites[0].cases.forEach(test => {
+      assert.ok(test.startTime instanceof Date);
+      assert.ok(test.endTime instanceof Date);
+      assert.ok(test.endTime >= test.startTime);
+    });
+  });
+
+  it('Should include started and completed timestamps on suites', () => {
+    const result = parse({ type: 'mstest', files: [`${testDataPath}/testresults_pass.trx`] });
+    assert.ok(result.suites[0].startTime instanceof Date);
+    assert.ok(result.suites[0].endTime instanceof Date);
+    assert.ok(result.suites[0].endTime >= result.suites[0].startTime);
+  });
+
+  it('Should include started and completed timestamps on overall result', () => {
+    const result = parse({ type: 'mstest', files: [`${testDataPath}/testresults_pass.trx`] });
+    assert.ok(result.startTime instanceof Date);
+    assert.ok(result.endTime instanceof Date);
+    assert.ok(result.endTime >= result.startTime);
+  });
 
   it('Should map results correctly', () => {
     assert.equal(result.status, "FAIL");
@@ -108,6 +131,16 @@ describe('Parser - MSTest', () => {
     const result = parse({ type: 'mstest', files: [`${testDataPath}/testresults_pass.trx`] });
     assert.equal(result.status, "PASS");
   });
+
+  it('Should handle test results with no test cases', () => {
+    const result = parse({ type: 'mstest', files: [`${testDataPath}/empty-results.trx`] });
+    assert.equal(result.total, 0);
+    assert.equal(result.passed, 0);
+    assert.equal(result.failed, 0);
+    assert.equal(result.skipped, 0);
+    assert.equal(result.suites.length, 0);
+    assert.equal(result.status, "PASS");
+  })
 
   function resolveExpectedResultFilePath(executionId, filePath) {
     return path.join(

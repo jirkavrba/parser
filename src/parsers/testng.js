@@ -1,4 +1,5 @@
 const { getJsonFromXMLFile } = require('../helpers/helper');
+const { getStartAndEndTime } = require('./base.helpers');
 
 const TestResult = require('../models/TestResult');
 const TestSuite = require('../models/TestSuite');
@@ -7,6 +8,15 @@ const TestCase = require('../models/TestCase');
 // assemble a fully qualified test name (class.name)
 function getFullTestName(raw) {
   return "".concat(raw["@_class"], ".", raw["@_name"]);
+}
+
+function getDate(rawDate) {
+  if (!rawDate) return null;
+  const timezoneIndex = rawDate.lastIndexOf(' ');
+  if (timezoneIndex > 0) {
+    rawDate = rawDate.substring(0, timezoneIndex); // remove ambigious timezone, treat as local
+  }
+  return new Date(rawDate);
 }
 
 // create a mapping between fully qualified test name and and group
@@ -36,6 +46,8 @@ function getTestCase(rawCase, testCaseToGroupMap) {
   test_case.name = rawCase["@_name"];
   test_case.duration = rawCase["@_duration-ms"];
   test_case.status = rawCase["@_status"];
+  test_case.startTime = getDate(rawCase["@_started-at"]);
+  test_case.endTime = getDate(rawCase["@_finished-at"]);
   const key = getFullTestName(rawCase);
   if (testCaseToGroupMap.has(key)) {
     let groups = testCaseToGroupMap.get(key);
@@ -54,6 +66,8 @@ function getTestSuiteFromTest(rawTest, testCaseToGroupMap) {
   const suite = new TestSuite();
   suite.name = rawTest['@_name'];
   suite.duration = rawTest['@_duration-ms'];
+  suite.startTime = getDate(rawTest['@_started-at']);
+  suite.endTime = getDate(rawTest['@_finished-at']);
   const rawTestMethods = [];
   const rawClasses = rawTest.class;
   for (let i = 0; i < rawClasses.length; i++) {
@@ -83,6 +97,8 @@ function getTestSuite(rawSuite) {
   const suite = new TestSuite();
   suite.name = rawSuite['@_name'];
   suite.duration = rawSuite['@_duration-ms'];
+  suite.startTime = getDate(rawSuite['@_started-at']);
+  suite.endTime = getDate(rawSuite['@_finished-at']);
   const rawTests = rawSuite.test;
   const rawTestMethods = [];
   const testCaseToGroupMap = getSuiteGroups(rawSuite);
@@ -138,7 +154,7 @@ function parse(file) {
   const suitesWithTests = suites.filter(suite => suite.test && suite['@_duration-ms'] > 0);
 
   if (suitesWithTests.length > 1) {
-    for (let i = 0; i < suitesWithTests.length; i++) {
+    for (let i = 0; i < suitesWithTests.length; i++) {     
       const _suite = getTestSuite(suitesWithTests[i]);
       result.suites.push(_suite);
       result.duration += _suite.duration;
@@ -163,6 +179,9 @@ function parse(file) {
     console.warn("No suites with tests found");
   }
   result.status = result.total === result.passed ? 'PASS' : 'FAIL';
+  const { startTime, endTime } = getStartAndEndTime(result.suites);
+  result.startTime = startTime;
+  result.endTime = endTime;
   return result;
 }
 

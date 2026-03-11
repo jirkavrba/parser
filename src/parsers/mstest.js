@@ -1,4 +1,5 @@
 const { getJsonFromXMLFile } = require('../helpers/helper');
+const { getStartAndEndTime, getDate } = require('./base.helpers');
 const path = require('path');
 
 const TestResult = require('../models/TestResult');
@@ -127,6 +128,8 @@ function getTestCase(rawTestResult, definitionMap, testRunName) {
     testCase.name = getTestCaseName(rawDefinition);
     testCase.status = RESULT_MAP[rawTestResult["@_outcome"]];
     testCase.duration = getTestResultDuration(rawTestResult);
+    testCase.startTime = getDate(rawTestResult["@_startTime"]);
+    testCase.endTime = getDate(rawTestResult["@_endTime"]);
 
     // collect error messages
     if (rawTestResult.Output && rawTestResult.Output.ErrorInfo) {
@@ -148,7 +151,7 @@ function getTestDefinitionsMap(rawTestDefinitions) {
   let map = new Map();
 
   // assume all definitions are 'UnitTest' elements
-  if (rawTestDefinitions.UnitTest) {
+  if (rawTestDefinitions && rawTestDefinitions.UnitTest) {
     let rawUnitTests = rawTestDefinitions.UnitTest;
     for (let i = 0; i < rawUnitTests.length; i++) {
       let rawUnitTest = rawUnitTests[i];
@@ -166,7 +169,7 @@ function getTestResults(rawTestResults) {
   let results = [];
 
   // assume all results are UnitTestResult elements
-  if (rawTestResults.UnitTestResult) {
+  if (rawTestResults && rawTestResults.UnitTestResult) {
     let unitTests = rawTestResults.UnitTestResult;
     for (let i = 0; i < unitTests.length; i++) {
       results.push(unitTests[i]);
@@ -210,6 +213,9 @@ function getTestSuites(rawTestRun) {
     suite.errors = suite.cases.filter(i => i.status == "ERROR").length;
     suite.duration = suite.cases.reduce((total, test) => { return total + test.duration }, 0);
     suite.status = (suite.failed + suite.errors) > 0 ? "FAIL" : "PASS";
+    const { startTime, endTime } = getStartAndEndTime(suite.cases);
+    suite.startTime = startTime;
+    suite.endTime = endTime;
     result.push(suite);
   }
 
@@ -230,7 +236,9 @@ function getTestResult(json) {
   result.skipped = result.suites.reduce((total, suite) => { return total + suite.skipped }, 0);
   result.errors = result.suites.reduce((total, suite) => { return total + suite.errors }, 0);
   result.duration = result.suites.reduce((total, suite) => { return total + suite.duration }, 0);
-
+  const { startTime, endTime } = getStartAndEndTime(result.suites);
+  result.startTime = startTime;
+  result.endTime = endTime;
   result.status = (result.failed + result.errors) > 0 ? "FAIL" : "PASS";
 
   return result;
